@@ -1,6 +1,7 @@
 # CalendarEvents-Reader
 Livecode Builder Library that reads Calendar Event data (Mac OS)
 A first attempt at a Library to read MacOS calendar events.  Provides Livecode Script with two commands, for example
+
 put smkCheckAuth() into tAuthStatus
 
    if tAuthStatus is "Authorised" then
