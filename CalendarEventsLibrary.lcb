@@ -18,10 +18,13 @@ Example:
 
 Description:
 Provides two handlers that enable the application to obtain an array of calendar evants.
->*Note:* This library is MIT licensed (permissive).
-> Please share and share a like.
+Note, This library is MIT licensed (permissive).
+Please share and share a like.
 
-References: Nil
+OS:mac
+Platforms:desktop
+
+References: https://developer.apple.com/documentation/eventkit?language=objc
 
 Tags: Library, Events, calendar, Eventstore
 
@@ -31,9 +34,14 @@ library net.anvic.skids.calendarevents
 use com.livecode.foreign
 use com.livecode.objc
 
-metadata title is "Calendar Events Library"
+metadata title is "List Calendar Events Library"
 metadata author is "Simon (Skids) Knight"
-metadata version is "1.0.0"
+metadata version is "1.0.1"
+
+metadata dated is "15th Feb 2020"
+
+
+-- Last updated : 15 Feb 2020
 
 
 
@@ -153,11 +161,15 @@ private foreign handler Objc_CalendarTitle(in pEventObj as objcID) \
 						returns optional objcID \
 						binds to "objc:EventKit>EKCalendar.title"
 
-/* Try and get details of the Alarms */
+/* Try and get details of the Alarms, an event may have multiple alarms */
 private foreign handler Objc_AlarmNSDate(in pEventObj as objcID) \
 						returns optional objcID \
 						binds to "objc:EventKit>EKAlarm.absoluteDate"
 
+/* relativeOffset returns a NSTimeInterval which is a double */
+private foreign handler Objc_EventRelativeAlarm(in pEventObj as objcID) \
+						returns optional CDouble \
+						binds to "objc:EventKit>EKAlarm.relativeOffset"
 
 	/*private foreign handler ObjcCountOfArrayElements(pArray as objcID) \
 				returns optional CUint \
@@ -170,10 +182,11 @@ private variable sEventStore as optional ObjcObject
 
 /**
 Summary: Checks that the calling application is authorised to access the calendar data.
-Returns: A string reporting the authorisation status of application.  A status of "Authorised" is required.
+Returns :string
 Description:
 Calls the objective-c/cocoa method "+authorizationStatusForEntityType:" of the EKEventStore class.  This returns
 an integer value in range 0-3.  This is decoded and the text decode returned to the calling application.
+This is converted to a string reporting the authorisation status of application.  A status of "Authorised" is required.
 If the value is other than 3 - "Authorised" then the user must grant access to the application.  This is achieved
 through the "Security and Privacy" pane of system preferences. Open this and select the Privacy tab.
 Next select Calendars in the pane on the left and then add the application requiring access to the pane on the right.
@@ -247,18 +260,27 @@ end handler
 
 /**
 Summary: Calls a multitude of handlers to access the stored events.
-pStartDate: a string that holds the start date in format yyyy-MM-dd.
-pEndDate: a string that holds the end date in format yyyy-MM-dd.
+Parameters:
+pStartDate(string):start date in format yyyy-MM-dd.
+pEndDate(string):end date in format yyyy-MM-dd.
 Returns: an array of events that fall between the start and end dates.
 The array keys are  numeric then text e.g. array[n]["title"].
-The text keys are - startdate, enddate, title, hasNotes, notes, location, calendar, allday, URL, eventID, externalID
+The text keys are - startdate, enddate, title, hasNotes, notes, location,
+calendar, allday, URL, eventID, externalID
 Description:
 Obtains an array of all calendar objects.  Builds a search predicate based on start and end dates.
 This returns a list of event objects which are interogated and their properties stored in an array.
 This is the array that is returned to the calling application.
 
-This version retuns the following data in the Array[n]["keyword"]:
-startdate, enddate, title, hasNotes, notes, location, calendar, allday, URL, eventID, externalID, hasAlarms .
+This version retuns the following data in the Array[n]["keyword"];
+startdate, enddate, title, hasNotes, notes, location, calendar, allday, URL,
+eventID, externalID, hasAlarms, alarm_AbsoluteDate, alarm_RelativeSecs .
+
+The alarms assocciated with an event are returned in a string delimited by ";".
+alarm_RelativeSecs lists alarms that are relative to the event's date and time,
+in seconds, a negative value indicates an alarm before the event.
+
+Note that details of alarms are only available about events that you own.
 
 An example of a returned date is "2019-01-04,10:00:00,GMT,Fri,Jan,04,2019".
 
@@ -424,9 +446,9 @@ private handler EkEventToArray(in pEKevent as ObjcObject) returns Array
 			if Objc_EventAlarms(pEKEvent) is not nothing then
 				-- first the absolute Alarms
 				put Objc_EventAlarms(pEKEvent) into tEKAlarms  -- an Array
-				put AlarmsToStr(tEKAlarms) into tEvents["Alarm_absoluteDate"]
+				put AbsoluteAlarmsToStr(tEKAlarms) into tEvents["alarm_AbsoluteDate"]
 				-- next the relative alarms i,e the most common
-				-- put Objc_EventRelativeAlarms(pEKEvent) into tDouble
+				put RelAlarmsToStr(tEKAlarms) into tEvents["alarm_RelativeSecs"]
 			end if
 		end if
 
@@ -438,7 +460,7 @@ private handler EkEventToArray(in pEKevent as ObjcObject) returns Array
 	return tEvents
 end handler
 
-private handler AlarmsToStr(in pEKAlarmsArray as objcObject) returns String
+private handler AbsoluteAlarmsToStr(in pEKAlarmsArray as objcObject) returns String
 	/* pEKAlarmsArray is an array of EKAlarm objects.
 	Handler Objc_AlarmNSDate returns an NSDate object, which is then
 	converted to a String,  multiple alarma are stored in one string delimited
@@ -461,12 +483,39 @@ private handler AlarmsToStr(in pEKAlarmsArray as objcObject) returns String
 			end if
 		end unsafe
 	end repeat
-	--delete the last char of tDates
+	if the last char of tDates is ";" then
+		delete the last char of tDates
+	end if
 	return tDates
 end handler
 
 private handler RelAlarmsToStr(in pEKAlarmsArray as objcObject) returns String
+	/* pEKAlarmsArray is an array of EKAlarm objects.
+	Handler Objc_RelAlarmNSTimeInterval returns an NSTimeInterval object
+	(type: double), which is then converted to a String,
+	multiple alarma are stored in one string delimited
+	by semi colons.  This string is returned. */
+	variable tAlarmsList as List
+	variable tNSTimeInterval as CDouble
+	variable tRelTimeIntervals as String
+	variable tAlarm as objcObject
 
+	if pEKAlarmsArray is not nothing then
+		put listFromNSArray(pEKAlarmsArray) into tAlarmsList
+		-- Loop through the alarm objects in the list
+		repeat for each element tAlarm in tAlarmsList
+			unsafe
+				if Objc_EventRelativeAlarm(tAlarm) is not nothing then
+					put Objc_EventRelativeAlarm(tAlarm) into tNSTimeInterval
+					put tNSTimeInterval formatted as string & ";" after tRelTimeIntervals
+				end if
+			end unsafe
+		end repeat
+	end if
+	if the last char of tRelTimeIntervals is ";" then
+		delete the last char of tRelTimeIntervals
+	end if
+	return tRelTimeIntervals
 end handler
 
 private handler NSStringtoStr(in pNSString as optional ObjcObject) returns String
