@@ -36,7 +36,7 @@ use com.livecode.objc
 
 metadata title is "List Calendar Events Library"
 metadata author is "Simon (Skids) Knight"
-metadata version is "1.0.1"
+metadata version is "1.0.2"
 
 metadata dated is "15th Feb 2020"
 
@@ -483,7 +483,7 @@ private handler AbsoluteAlarmsToStr(in pEKAlarmsArray as objcObject) returns Str
 			end if
 		end unsafe
 	end repeat
-	if the last char of tDates is ";" then
+	if tDates ends with ";" then
 		delete the last char of tDates
 	end if
 	return tDates
@@ -512,7 +512,7 @@ private handler RelAlarmsToStr(in pEKAlarmsArray as objcObject) returns String
 			end unsafe
 		end repeat
 	end if
-	if the last char of tRelTimeIntervals is ";" then
+	if tRelTimeIntervals ends with ";" then
 		delete the last char of tRelTimeIntervals
 	end if
 	return tRelTimeIntervals
